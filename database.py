@@ -82,9 +82,9 @@ def insert_paper(paper: dict, db_path: str = DB_PATH) -> bool:
         cursor = conn.execute(
             """
             INSERT OR IGNORE INTO papers
-                (id, title, authors, published_date, abstract, source, ai_summary, url)
+                (id, title, authors, published_date, abstract, source, ai_summary, url, access_type, journal)
             VALUES
-                (:id, :title, :authors, :published_date, :abstract, :source, :ai_summary, :url)
+                (:id, :title, :authors, :published_date, :abstract, :source, :ai_summary, :url, :access_type, :journal)
             """,
             paper,
         )
