@@ -39,10 +39,18 @@ def init_db(db_path: str = DB_PATH) -> None:
                 source          TEXT,
                 ai_summary      TEXT,
                 url             TEXT,
+                access_type     TEXT DEFAULT 'Unknown',
+                journal         TEXT DEFAULT '',
                 fetched_at      TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        # Migrate older databases that lack the new columns
+        for col, default in [("access_type", "'Unknown'"), ("journal", "''")]:
+            try:
+                conn.execute(f"ALTER TABLE papers ADD COLUMN {col} TEXT DEFAULT {default}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
         logger.info("Database initialised at %s", db_path)
     finally:
@@ -99,9 +107,9 @@ def insert_papers(papers: list[dict], db_path: str = DB_PATH) -> int:
             cursor = conn.execute(
                 """
                 INSERT OR IGNORE INTO papers
-                    (id, title, authors, published_date, abstract, source, ai_summary, url)
+                    (id, title, authors, published_date, abstract, source, ai_summary, url, access_type, journal)
                 VALUES
-                    (:id, :title, :authors, :published_date, :abstract, :source, :ai_summary, :url)
+                    (:id, :title, :authors, :published_date, :abstract, :source, :ai_summary, :url, :access_type, :journal)
                 """,
                 paper,
             )

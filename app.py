@@ -76,10 +76,32 @@ st.markdown(
         color: #9ca3af;
         margin-bottom: 0.7rem;
     }
-    .paper-summary {
-        font-size: 0.95rem;
-        color: #d1d5db;
-        line-height: 1.65;
+
+    /* ── Access badges ──────────────────────────────────────── */
+    .badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        margin-left: 0.4rem;
+        vertical-align: middle;
+    }
+    .badge-oa {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-sub {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .paper-journal {
+        font-size: 0.78rem;
+        color: #8b8fa3;
+        font-style: italic;
+        margin-bottom: 0.4rem;
     }
 
     /* ── Header banner ──────────────────────────────────────── */
@@ -148,7 +170,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        "<small style='color:#888'>Sources: arXiv · PubMed · Semantic Scholar · OpenAlex</small>",
+        "<small style='color:#888'>Sources: arXiv · PubMed · CrossRef · Europe PMC · Semantic Scholar · OpenAlex<br>"
+        "Includes both Open Access and Subscription papers</small>",
         unsafe_allow_html=True,
     )
 
@@ -178,6 +201,8 @@ if fetch_clicked:
             else:
                 for paper in new_papers:
                     paper["ai_summary"] = None
+                    paper.setdefault("access_type", "Unknown")
+                    paper.setdefault("journal", "")
 
                 inserted = insert_papers(new_papers)
                 source_counts = {}
@@ -194,7 +219,7 @@ st.markdown(
     """
     <div class="main-header">
         <h1>🧬 Medical AI Research Aggregator</h1>
-        <p>Latest papers on medical imaging &amp; AI from arXiv, PubMed, Semantic Scholar &amp; OpenAlex</p>
+        <p>Latest medical AI papers from arXiv, PubMed, CrossRef, Europe PMC, Semantic Scholar &amp; OpenAlex</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -223,12 +248,21 @@ else:
 
     # Paper cards
     for paper in papers:
+        access = paper.get("access_type", "Unknown")
+        badge_class = "badge-oa" if access == "Open Access" else "badge-sub"
+        badge_label = "OA" if access == "Open Access" else "Subscription" if access == "Subscription" else "Unknown"
+        journal = paper.get("journal", "") or ""
+        journal_html = f'<div class="paper-journal">{journal}</div>' if journal else ""
+
         st.markdown(
             f"""
             <div class="paper-card">
                 <div class="paper-title">{paper["title"]}</div>
+                {journal_html}
                 <div class="paper-meta">
-                    📅 {paper["published_date"]}  &nbsp;•&nbsp;  📚 {paper["source"]}
+                    📅 {paper["published_date"]}  &nbsp;•&nbsp;
+                    📚 {paper["source"]}
+                    <span class="badge {badge_class}">{badge_label}</span>
                 </div>
             </div>
             """,
