@@ -244,9 +244,10 @@ def _parse_pubmed_article(article) -> Optional[dict]:
             if year:
                 published_date = f"{year}-{month}-{day.zfill(2)}"
 
-        # Access type — check for PMC free full text
+        # Access type — check for PMC free full text or PMC identifiers
         pmc_el = article.find(".//PubmedData/ArticleIdList/ArticleId[@IdType='pmc']")
-        access_type = "Open Access" if pmc_el is not None else "Subscription"
+        pmc_id = article.find(".//ArticleIdList/ArticleId[@IdType='pmcid']")
+        access_type = "Open Access" if (pmc_el is not None or pmc_id is not None) else "Subscription"
 
         url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
 
@@ -496,11 +497,10 @@ def fetch_crossref(
             params={
                 "query": query,
                 "rows": min(max_results, 50),
-                "sort": "published",
+                "sort": "created",
                 "order": "desc",
                 "filter": "has-abstract:true",
-                "select": "DOI,title,author,abstract,published-print,published-online,"
-                          "container-title,link,URL,license",
+                "select": "DOI,title,author,abstract,published-print,published-online,created,deposited,container-title,link,URL,license",
             },
             headers={
                 "User-Agent": "MedAI-Aggregator/1.0 (mailto:research@example.com)",
@@ -552,9 +552,16 @@ def _parse_crossref_item(item: dict) -> Optional[dict]:
             if a.get("family")
         )
 
-        # Published date
-        pub = item.get("published-print") or item.get("published-online") or {}
+        # Published date - publishers often have typos in 'published' (like 2121 instead of 2021)
+        pub = item.get("published-print") or item.get("published-online") or item.get("created") or {}
         date_parts = pub.get("date-parts", [[]])[0]
+        current_year = datetime.now().year
+        
+        if len(date_parts) >= 1 and date_parts[0] > current_year:
+            # Fallback to created date if published is in the future
+            created = item.get("created", {})
+            date_parts = created.get("date-parts", [[]])[0]
+
         if len(date_parts) >= 3:
             published_date = f"{date_parts[0]}-{str(date_parts[1]).zfill(2)}-{str(date_parts[2]).zfill(2)}"
         elif len(date_parts) >= 2:
@@ -568,13 +575,15 @@ def _parse_crossref_item(item: dict) -> Optional[dict]:
         containers = item.get("container-title", [])
         journal = containers[0] if containers else ""
 
-        # Access type — check for open-access license
+        # Access type — check for open-access license or text-mining links
         licenses = item.get("license", [])
-        is_oa = any(
-            "creativecommons" in (lic.get("URL", "") or "").lower()
+        links = item.get("link", [])
+        has_oa_license = any(
+            any(kw in (lic.get("URL", "") or "").lower() for kw in ["creativecommons", "open-access", "doaj", "elsevier.com/open-access"])
             for lic in licenses
         )
-        access_type = "Open Access" if is_oa else "Subscription"
+        has_oa_link = any(link.get("intended-application") == "text-mining" for link in links)
+        access_type = "Open Access" if (has_oa_license or has_oa_link) else "Subscription"
 
         url = f"https://doi.org/{doi}"
 
