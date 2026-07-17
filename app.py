@@ -155,8 +155,8 @@ with st.sidebar:
 
     query = st.text_input(
         "Search keywords",
-        value="medical imaging artificial intelligence deep learning",
-        help="Keywords to search across all selected sources",
+        value='"medical imaging" "artificial intelligence"',
+        help="Use quotes for exact phrases (e.g. \"deep learning\")",
     )
     max_per_source = st.slider("Papers per source", 5, 50, 10)
 
