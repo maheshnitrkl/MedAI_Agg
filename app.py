@@ -2,14 +2,14 @@
 app.py — Streamlit dashboard for the Medical AI Research Aggregator.
 
 Displays papers from the local SQLite database and provides a sidebar
-button to fetch and store new papers from arXiv.
+button to fetch and store new papers from multiple sources.
 """
 
 import logging
 import streamlit as st
 
 from database import init_db, get_existing_ids, insert_papers, fetch_all_papers
-from fetcher import fetch_arxiv
+from fetcher import fetch_all_sources, ALL_SOURCES
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -132,17 +132,23 @@ with st.sidebar:
     st.markdown("---")
 
     query = st.text_input(
-        "Search query",
-        value='all:"medical imaging" AND (all:"artificial intelligence" OR all:"deep learning")',
-        help="arXiv search_query with boolean operators",
+        "Search keywords",
+        value="medical imaging artificial intelligence deep learning",
+        help="Keywords to search across all selected sources",
     )
-    max_results = st.slider("Max papers to fetch", 5, 50, 20)
+    max_per_source = st.slider("Papers per source", 5, 50, 10)
+
+    st.markdown("#### 📚 Sources")
+    selected_sources: list[str] = []
+    for source_name in ALL_SOURCES:
+        if st.checkbox(source_name, value=True, key=f"src_{source_name}"):
+            selected_sources.append(source_name)
 
     fetch_clicked = st.button("🚀 Fetch Latest Papers", use_container_width=True)
 
     st.markdown("---")
     st.markdown(
-        "<small style='color:#888'>Data source: arXiv API</small>",
+        "<small style='color:#888'>Sources: arXiv · PubMed · Semantic Scholar · OpenAlex</small>",
         unsafe_allow_html=True,
     )
 
@@ -150,26 +156,36 @@ with st.sidebar:
 # Pipeline: fetch → filter-new → insert
 # ---------------------------------------------------------------------------
 if fetch_clicked:
-    with st.spinner("Fetching papers from arXiv…"):
-        raw_papers = fetch_arxiv(query=query, max_results=max_results)
-
-    if not raw_papers:
-        st.warning("No papers returned from arXiv. Try again later or adjust the query.")
+    if not selected_sources:
+        st.warning("Please select at least one source.")
     else:
-        # Filter out papers already in the DB
-        existing_ids = get_existing_ids()
-        new_papers = [p for p in raw_papers if p["id"] not in existing_ids]
+        with st.spinner(f"Fetching papers from {len(selected_sources)} source(s)…"):
+            raw_papers = fetch_all_sources(
+                query=query,
+                max_results_per_source=max_per_source,
+                sources=selected_sources,
+            )
 
-        if not new_papers:
-            st.info("All fetched papers are already in the database — nothing new to add.")
+        if not raw_papers:
+            st.warning("No papers returned. Try different keywords or sources.")
         else:
-            # Set ai_summary to None for all new papers
-            for paper in new_papers:
-                paper["ai_summary"] = None
+            # Filter out papers already in the DB
+            existing_ids = get_existing_ids()
+            new_papers = [p for p in raw_papers if p["id"] not in existing_ids]
 
-            inserted = insert_papers(new_papers)
-            st.success(f"Added {inserted} new paper{'s' if inserted != 1 else ''}.")
-            logger.info("Inserted %d new papers.", inserted)
+            if not new_papers:
+                st.info("All fetched papers are already in the database — nothing new to add.")
+            else:
+                for paper in new_papers:
+                    paper["ai_summary"] = None
+
+                inserted = insert_papers(new_papers)
+                source_counts = {}
+                for p in new_papers:
+                    source_counts[p["source"]] = source_counts.get(p["source"], 0) + 1
+                details = ", ".join(f"{v} from {k}" for k, v in source_counts.items())
+                st.success(f"Added {inserted} new paper(s): {details}")
+                logger.info("Inserted %d new papers.", inserted)
 
 # ---------------------------------------------------------------------------
 # Main content — header
@@ -178,7 +194,7 @@ st.markdown(
     """
     <div class="main-header">
         <h1>🧬 Medical AI Research Aggregator</h1>
-        <p>Latest papers on medical imaging &amp; artificial intelligence from arXiv</p>
+        <p>Latest papers on medical imaging &amp; AI from arXiv, PubMed, Semantic Scholar &amp; OpenAlex</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -195,14 +211,12 @@ if not papers:
         "Click **Fetch Latest Papers** in the sidebar to get started!"
     )
 else:
-    # Stat pills
-    arxiv_count = sum(1 for p in papers if p["source"] == "arXiv")
-    pubmed_count = sum(1 for p in papers if p["source"] == "PubMed")
+    # Stat pills — dynamic for all sources
+    from collections import Counter
+    source_counts = Counter(p["source"] for p in papers)
     stats_html = f'<span class="stat-pill">📄 {len(papers)} papers</span>'
-    if arxiv_count:
-        stats_html += f'<span class="stat-pill">arXiv: {arxiv_count}</span>'
-    if pubmed_count:
-        stats_html += f'<span class="stat-pill">PubMed: {pubmed_count}</span>'
+    for src, count in source_counts.most_common():
+        stats_html += f'<span class="stat-pill">{src}: {count}</span>'
     st.markdown(stats_html, unsafe_allow_html=True)
 
     st.markdown("")  # spacer
