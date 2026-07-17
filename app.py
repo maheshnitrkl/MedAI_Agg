@@ -2,7 +2,7 @@
 app.py — Streamlit dashboard for the Medical AI Research Aggregator.
 
 Displays papers from the local SQLite database and provides a sidebar
-button to fetch, summarize, and store new papers from arXiv.
+button to fetch and store new papers from arXiv.
 """
 
 import logging
@@ -10,7 +10,6 @@ import streamlit as st
 
 from database import init_db, get_existing_ids, insert_papers, fetch_all_papers
 from fetcher import fetch_arxiv
-from summarizer import summarize_abstract
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -143,13 +142,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        "<small style='color:#888'>Data source: arXiv API<br>"
-        "Summaries: Google Gemini</small>",
+        "<small style='color:#888'>Data source: arXiv API</small>",
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------------------
-# Pipeline: fetch → filter-new → summarize → insert
+# Pipeline: fetch → filter-new → insert
 # ---------------------------------------------------------------------------
 if fetch_clicked:
     with st.spinner("Fetching papers from arXiv…"):
@@ -165,16 +163,11 @@ if fetch_clicked:
         if not new_papers:
             st.info("All fetched papers are already in the database — nothing new to add.")
         else:
-            progress_bar = st.progress(0, text="Summarising new papers…")
-            for idx, paper in enumerate(new_papers):
-                paper["ai_summary"] = summarize_abstract(paper["abstract"])
-                progress_bar.progress(
-                    (idx + 1) / len(new_papers),
-                    text=f"Summarised {idx + 1}/{len(new_papers)}…",
-                )
+            # Set ai_summary to None for all new papers
+            for paper in new_papers:
+                paper["ai_summary"] = None
 
             inserted = insert_papers(new_papers)
-            progress_bar.empty()
             st.success(f"Added {inserted} new paper{'s' if inserted != 1 else ''}.")
             logger.info("Inserted %d new papers.", inserted)
 
@@ -185,7 +178,7 @@ st.markdown(
     """
     <div class="main-header">
         <h1>🧬 Medical AI Research Aggregator</h1>
-        <p>Latest papers on medical imaging &amp; artificial intelligence, auto-summarised by Gemini</p>
+        <p>Latest papers on medical imaging &amp; artificial intelligence from arXiv</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -223,7 +216,6 @@ else:
                 <div class="paper-meta">
                     📅 {paper["published_date"]}  &nbsp;•&nbsp;  📚 {paper["source"]}
                 </div>
-                <div class="paper-summary">{paper.get("ai_summary", "")}</div>
             </div>
             """,
             unsafe_allow_html=True,

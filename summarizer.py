@@ -42,12 +42,15 @@ def _get_secret(key: str, default: str = "") -> str:
     return os.getenv(key, default).strip()
 
 
-def summarize_abstract(abstract: str) -> str:
+def summarize_abstract(abstract: str, max_retries: int = 3) -> str:
     """
     Summarise a single abstract using Google Gemini.
 
+    Retries up to `max_retries` times on rate-limit (429) errors with a 35s backoff.
     Returns a plain-text, 2-sentence summary or the fallback string on any failure.
     """
+    import time
+
     api_key = _get_secret("GEMINI_API_KEY")
     if not api_key:
         logger.warning("GEMINI_API_KEY is not set — skipping summarisation.")
@@ -69,16 +72,31 @@ def summarize_abstract(abstract: str) -> str:
             system_instruction=SYSTEM_PROMPT,
         )
 
-        response = model.generate_content(truncated)
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = model.generate_content(truncated)
 
-        # Extract text — guard against empty / blocked responses
-        summary_text = (response.text or "").strip()
-        if not summary_text:
-            logger.warning("Gemini returned an empty response.")
-            return FALLBACK_SUMMARY
+                # Extract text — guard against empty / blocked responses
+                summary_text = (response.text or "").strip()
+                if not summary_text:
+                    logger.warning("Gemini returned an empty response.")
+                    return FALLBACK_SUMMARY
 
-        return summary_text
+                return summary_text
+
+            except Exception as exc:
+                exc_str = str(exc)
+                if "429" in exc_str and attempt < max_retries:
+                    wait = 35 * attempt
+                    logger.warning(
+                        "Rate-limited (attempt %d/%d). Retrying in %ds…",
+                        attempt, max_retries, wait,
+                    )
+                    time.sleep(wait)
+                else:
+                    raise
 
     except Exception as exc:
         logger.error("Gemini summarisation failed: %s", exc)
         return FALLBACK_SUMMARY
+
